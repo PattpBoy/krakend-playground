@@ -1,64 +1,215 @@
-version: "3"
+version: "3.9"
+
+x-logging: &logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "64M"
+      max-file: "2"
+x-restart: &restart
+  restart: unless-stopped
+
 services:
+  traefik:
+    image: "traefik:2.7"
+    container_name: "traefik.docker"
+    <<: *restart
+    ports:
+      - "80:80"
+      - "8080:8080"
+    expose:
+      - 80
+      - 8080
+    volumes:
+      - "/etc/localtime:/etc/localtime:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--entrypoints.http.address=:80"
+      - "--providers.docker=true"
+      - "--providers.docker.watch=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=kraken-poc-backend"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=8080"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.krakend.test`)"
+      - "traefik.http.routers.dashboard.middlewares=traefik-auth"
+      - "traefik.http.middlewares.auth.basicauth.users=test:$apr1$K8RmlfSZ$zOnm8Bdc7ohhbFVqUVkny."
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - traefik.service
+
   grafana:
     build:
       dockerfile: Dockerfile
       context: ./grafana
-    ports:
-      - "3003:3000"
+    container_name: grafana.docker
+    expose:
+      - 3000
+    <<: *logging
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.krakend.test`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - grafana.service
+
   influxdb:
     image: influxdb:1.8
+    container_name: influxdb.docker
     environment:
       - "INFLUXDB_DB=krakend"
       - "INFLUXDB_USER=krakend-dev"
       - "INFLUXDB_USER_PASSWORD=pas5w0rd"
       - "INFLUXDB_ADMIN_USER=admin"
       - "INFLUXDB_ADMIN_PASSWORD=supersecretpassword"
-    ports:
-      - "8086:8086"
+    expose:
+      - 8086
+    labels:
+      - "traefik.enable=false"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - influxdb.service
+
   jaeger:
     image: jaegertracing/all-in-one:latest
-    ports:
-      - "16686:16686"
-      - "14268:14268"
+    container_name: jaeger.docker
+    <<: *logging
+    expose:
+      - 16686
+      - 14268
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jaeger.rule=Host(`jaeger.krakend.test`)"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=3000"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - jaeger.service
+
   rabbitmq:
     image: rabbitmq:3-management
-    ports:
-      - "15672:15672"
+    container_name: rabbitmq.docker
+    <<: *logging
+    expose:
+      - 15672
+      - 5672
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rabbitmq.rule=Host(`jaeger.krakend.test`)"
+      - "traefik.http.services.rabbitmq.loadbalancer.server.port=15672"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - rabbitmq.service
+
   fake_api:
-    image: jaxgeller/lwan
-    volumes:
-      - ./data:/lwan/wwwroot
-    ports:
-      - "8000:8080"
-  web:
     build:
-      context: ./web
-    ports:
-      - "3000:3000"
+      context: ./fake-api
+    container_name: fake_api.docker
+    <<: *logging
+    volumes:
+      - ./fake-api/data:/lwan/wwwroot
+    expose:
+      - 8080
+    labels:
+      - "traefik.enable=false"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - fake-api.service
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      - APP_ENV:development
+    container_name: frontend.docker
+    <<: *logging
+    expose:
+      - 3000
+    volumes:
+      - ./frontend:/home/node/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`krakend.test`)"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - frontend.service
+
   kraken_designer:
     image: devopsfaith/krakendesigner:v2.0
-    ports:
-      - 8787:80
-  krakend_ce:
+    container_name: kraken_designer.docker
+    <<: *logging
+    expose:
+      - 80
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kraken_designer.rule=Host(`design.krakend.test`)"
+      - "traefik.http.services.kraken_designer.loadbalancer.server.port=80"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - kraken-designer.service
+
+  krakend:
     build:
       context: ./krakend
       args:
-        - KRAKEND_CONFIG=krakend.json
+        - KRAKEND_VERSION=${KRAKEND_VERSION:-2.0.5}
+    environment:
+      - FLEXIBLE_CONFIG=0
+      - FC_SETTINGS="/etc/krakend/config/settings/prod"
+      - FC_PARTIALS="/etc/krakend/config/partials"
+      - FC_TEMPLATES="/etc/krakend/config/templates"
+    container_name: krakend.docker
+    <<: *logging
     volumes:
-      - ./krakend/krakend.json:/etc/krakend/krakend.json
-    ports:
-      - "1234:1234"
-      - "8080:8080"
-      - "8090:8090"
+      - ./krakend/config/:/etc/krakend/
+    expose:
+      - 1234
+      - 8080
+      - 8090
 #    command: ["run", "-d", "-c", "/etc/krakend/krakend.json"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.krakend.rule=Host(`api.krakend.test`)"
+      - "traefik.http.services.krakend.loadbalancer.server.port=8080"
     depends_on:
       - fake_api
       - jaeger
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - krakend.service
+
   jwt_revoke:
     build:
       context: ./jwt-revoker
-    ports:
-      - "9000:8080"
+    container_name: jwt_revoke.docker
+    <<: *logging
+    expose:
+      - 8080
     depends_on:
-      - krakend_ce
+      - krakend
+    labels:
+      - "traefik.enable=false"
+    networks:
+      kraken-poc-backend:
+        aliases:
+          - jwt-revoke.service
+
+networks:
+  kraken-poc-backend:
+    driver: bridge
+    name: kraken-poc-backend

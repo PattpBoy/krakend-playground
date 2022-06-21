@@ -3,14 +3,14 @@
   "version": 3,
   "timeout": "3000ms",
   "cache_ttl": "300s",
-  "host": [ "http://fake_api:8080" ],
+  "host": [ "http://fake-api.service:8080" ],
   "extra_config": {
     "telemetry/metrics": {
       "collection_time": "30s",
       "listen_address":":8090"
     },
     "telemetry/influx":{
-      "address":"http://influxdb:8086",
+      "address":"http://influxdb.service:8086",
       "ttl":"25s",
       "buffer_size": 0
     },
@@ -25,13 +25,13 @@
       "reporting_period": 1,
       "exporters": {
         "jaeger": {
-          "endpoint": "http://jaeger:14268/api/traces",
+          "endpoint": "http://jaeger.service:14268/api/traces",
           "service_name":"krakend"
         }
       }
     },
     "security/cors": {
-      "allow_origins": [ "http://localhost:8080", "http://localhost:3000", "http://192.168.99.100:3000" ],
+      "allow_origins": [ "krakend.test", "*.krakend.test" ],
       "allow_methods": [ "POST", "GET" ],
       "allow_headers": ["Origin","Authorization","Content-Type"],
       "expose_headers": ["Content-Length"],
@@ -52,7 +52,7 @@
           "name": "async-agent-demo",
           "backend": [
               {
-                  "host":[ "http://127.0.0.1:8080" ],
+                  "host":[ "http://krakend.service:8080" ],
                   "url_pattern": "/__debug/async-agent-demo",
                   "method": "POST"
               }
@@ -68,7 +68,7 @@
           "extra_config": {
               "async/amqp": {
                   "name":           "krakend",
-                  "host":           "amqp://guest:guest@rabbitmq:5672/",
+                  "host":           "amqp://guest:guest@rabbitmq.service:5672/",
                   "exchange":       "foo",
                   "prefetch_count": 40,
                   "auto_ack":       true
@@ -133,41 +133,6 @@
       ]
     },
     {
-      "endpoint": "/public",
-      "backend": [
-        {
-          "host": [ "https://api.github.com" ],
-          "url_pattern": "/users/kpacha",
-          "allow": [
-            "avatar_url",
-            "name",
-            "company",
-            "blog",
-            "location",
-            "mail",
-            "hireable",
-            "followers",
-            "public_repos",
-            "public_gists"
-          ],
-          "mapping": { "blog": "website" },
-          "group": "github"
-        },
-        {
-          "host": [ "https://api.bitbucket.org" ],
-          "url_pattern": "/2.0/users/kpacha",
-          "allow": [
-            "links.avatar",
-            "display_name",
-            "website",
-            "location"
-          ],
-          "mapping": { "display_name": "name" },
-          "group": "bitbucket"
-        }
-      ]
-    },
-    {
       "endpoint": "/private/auth0",
       "backend": [
         {
@@ -198,7 +163,7 @@
           "roles_key": "roles",
           "issuer": "https://krakend.io",
           "roles": ["role_a", "role_c"],
-          "jwk_url": "http://fake_api:8080/jwk/symmetric.json",
+          "jwk_url": "http://fake-api.service:8080/jwk/symmetric.json",
           "disable_jwk_security": true
         }
       }
@@ -215,7 +180,7 @@
           "alg": "HS256",
           "kid": "sim2",
           "keys_to_sign": ["access_token", "refresh_token"],
-          "jwk_url": "http://fake_api:8080/jwk/symmetric.json",
+          "jwk_url": "http://fake-api.service:8080/jwk/symmetric.json",
           "disable_jwk_security": true
         }
       }
